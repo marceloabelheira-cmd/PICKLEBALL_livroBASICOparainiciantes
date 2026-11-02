@@ -33,7 +33,7 @@
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html{scroll-behavior:smooth;scroll-padding-top:120px}
+html{scroll-padding-top:120px}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important;animation:none!important}}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:60;background:var(--court-deep)}
@@ -322,17 +322,30 @@ function chapter(id, focus) {
   </div>${footer()}`;
   current = c;
   setupSpy();
-  if (focus) requestAnimationFrame(() => { const el = document.getElementById(focus); if (el) { el.scrollIntoView({block: 'start', behavior: 'instant'}); setTimeout(() => el.scrollIntoView({block: 'start', behavior: 'instant'}), 350); if (el.classList.contains('slide')) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } } });
+  if (focus) requestAnimationFrame(() => { const el = document.getElementById(focus); if (el) { goTo(el); setTimeout(() => goTo(el), 350); flash(el); const sub = el.closest('.sub'); if (sub && window.__setChip) window.__setChip(+sub.dataset.sub); } });
   else scrollTo({top: 0, behavior: 'instant'});
 }
 
-let spy;
+let spy, lockSpy = 0;
+function headerOffset() { let h = 0; const t = document.querySelector('.topbar'), n = document.querySelector('.subnav'); if (t) h += t.offsetHeight; if (n) h += n.offsetHeight; return h + 14; }
+function goTo(el, smooth) {
+  if (!el) return;
+  const y = el.getBoundingClientRect().top + scrollY - headerOffset();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  lockSpy = Date.now() + (smooth && !reduce ? 1200 : 150);
+  scrollTo({top: Math.max(0, y), behavior: smooth && !reduce ? 'smooth' : 'instant'});
+}
+function flash(el) { if (el && el.classList.contains('slide')) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }
+function setHash(h) { try { history.replaceState(null, '', '#' + h); } catch (e) {} }
 function setupSpy() {
   if (spy) spy.disconnect();
   const links = [...document.querySelectorAll('.subnav a')]; if (!links.length) return;
-  const set = k => links.forEach(a => { const on = +a.dataset.k === k; a.classList.toggle('on', on); if (on) a.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
+  const bar = links[0].parentElement;
+  const set = k => links.forEach(a => { const on = +a.dataset.k === k; a.classList.toggle('on', on); if (on) bar.scrollTo({left: a.offsetLeft - bar.clientWidth / 2 + a.offsetWidth / 2, behavior: 'smooth'}); });
+  window.__setChip = set;
+  links.forEach(a => a.addEventListener('click', e => { e.preventDefault(); const k = +a.dataset.k; set(k); goTo(document.querySelector(`.sub[data-sub="${k}"]`), true); setHash(a.getAttribute('href').slice(1)); }));
   set(0);
-  spy = new IntersectionObserver(es => { es.forEach(e => { if (e.isIntersecting) set(+e.target.dataset.sub); }); }, {rootMargin: '-35% 0px -60% 0px'});
+  spy = new IntersectionObserver(es => { if (Date.now() < lockSpy) return; es.forEach(e => { if (e.isIntersecting) set(+e.target.dataset.sub); }); }, {rootMargin: '-35% 0px -60% 0px'});
   document.querySelectorAll('.sub').forEach(s => spy.observe(s));
 }
 
@@ -341,8 +354,8 @@ function route() {
   let m;
   if (!h || h === 'inicio') { current = null; home(); scrollTo(0, 0); }
   else if (CH.some(c => c.id === h)) chapter(h);
-  else if ((m = h.match(/^slide-(\d+)$/)) && slideChapter[m[1]]) { const cid = slideChapter[m[1]]; if (current && current.id === cid && document.getElementById(h)) { const el = document.getElementById(h); el.scrollIntoView({block: 'start'}); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } else chapter(cid, h); }
-  else if ((m = h.match(/^(cap-\d|apresentacao)-p\d+$/))) { if (current && current.id === m[1]) document.getElementById(h)?.scrollIntoView({block: 'start'}); else chapter(m[1], h); }
+  else if ((m = h.match(/^slide-(\d+)$/)) && slideChapter[m[1]]) { const cid = slideChapter[m[1]]; if (current && current.id === cid && document.getElementById(h)) { const el = document.getElementById(h); goTo(el, true); flash(el); } else chapter(cid, h); }
+  else if ((m = h.match(/^(cap-\d|apresentacao)-p\d+$/))) { if (current && current.id === m[1]) goTo(document.getElementById(h), true); else chapter(m[1], h); }
   else { home(); }
   document.title = current ? `${current.title} · Pickleball para Todos` : 'Pickleball para Todos';
 }
@@ -364,7 +377,7 @@ app.addEventListener('click', e => {
   lbList = current.subs.flatMap(s => s[1]); lastFocus = b;
   lbShow(lbList.indexOf(+b.dataset.zoom)); lb.hidden = false; document.body.style.overflow = 'hidden'; document.getElementById('lbX').focus();
 });
-function lbClose() { lb.hidden = true; document.body.style.overflow = ''; const n = lbList[lbIdx]; const el = document.getElementById('slide-' + n); if (el) el.scrollIntoView({block: 'center'}); lastFocus && document.querySelector(`[data-zoom="${n}"]`)?.focus({preventScroll: true}); }
+function lbClose() { lb.hidden = true; document.body.style.overflow = ''; const n = lbList[lbIdx]; const el = document.getElementById('slide-' + n); if (el) { lockSpy = Date.now() + 200; el.scrollIntoView({block: 'center', behavior: 'instant'}); } lastFocus && document.querySelector(`[data-zoom="${n}"]`)?.focus({preventScroll: true}); }
 document.getElementById('lbX').onclick = lbClose;
 document.getElementById('lbP').onclick = () => lbShow(lbIdx - 1);
 document.getElementById('lbN').onclick = () => lbShow(lbIdx + 1);
